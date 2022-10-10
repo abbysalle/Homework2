@@ -1,0 +1,171 @@
+---
+title: "HW2"
+author: "Abigail Salle"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+<br>
+<br>
+<br>
+
+```{r}
+# load necessary packages 
+library(tidyverse)
+library(readr)
+library(tidymodels)
+```
+<br>
+<br>
+<br>
+```{r}
+# read in our data
+abalone_data <- read_csv("abalone.csv")
+head(abalone_data)
+```
+<br>
+<br>
+<br>
+Question 1.  
+```{r}
+# create new variable, age
+age <- abalone_data$rings +1.5
+
+# add to set and assess
+abalone_data2 <- cbind(abalone_data, age)
+head(abalone_data2)
+hist(abalone_data2$age, breaks=30, col="pink", xlab="Years")
+```
+ <br>
+  Age appears to be nearly symmetrical and approximately normal. If anything it is slightly right skewed. The maximum peak is around 11 years.  
+   <br>
+<br>
+<br>
+<br>
+<br>  
+ Question 2:  
+```{r}
+# split data into train and test sets 
+set.seed(1114)
+
+abalone_split <- initial_split(abalone_data2, prop = 0.80,
+                                strata = age)
+abalone_train <- training(abalone_split)
+abalone_test <- testing(abalone_split)
+```
+  <br>
+<br>
+<br>
+<br>
+<br>  
+ Question 3:
+```{r}
+# create recipe 
+simple_abalone_recipe <- recipe(age ~ 
+          type+longest_shell+diameter+height+whole_weight+shucked_weight+viscera_weight, data = abalone_train)
+simple_abalone_recipe
+```
+ <br>
+ We won't use rings to predict age because rings are already being considered. We used rings to create the variable "age" and so using it as a predictor variable again would be redundant / not make sense.
+<br>
+<br>
+```{r}
+# create better recipe and modify 
+abalone_recipe <- recipe(age ~ 
+          type+longest_shell+diameter+height+whole_weight+shucked_weight+viscera_weight+shell_weight, data = abalone_train) %>%
+
+step_dummy(all_nominal_predictors()) %>%
+step_interact(terms= ~longest_shell:diameter) %>%
+step_interact(terms= ~starts_with("type"):shucked_weight) %>%
+step_interact(terms= ~shucked_weight:shell_weight) %>%   
+step_zv(all_predictors()) %>%
+step_normalize(all_numeric(), -all_outcomes()) %>%
+prep(verbose = TRUE, log_changes = TRUE)
+
+```
+  <br>
+<br>
+<br>
+<br>
+<br>  
+ Question 4:
+```{r}
+# linear regression object 
+lm_model <- linear_reg() %>% 
+  set_engine("lm")
+```
+ <br>
+<br>
+<br>
+<br>
+<br>  
+ Question 5:
+```{r}
+# workflow
+lm_wflow <- workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(abalone_recipe)
+```
+  <br>
+<br>
+<br>
+<br>
+<br>  
+ Question 6:
+```{r}
+# try prediction
+lm_fit <- fit(lm_wflow, abalone_train)
+lm_fit %>% 
+  extract_fit_parsnip() %>% 
+  tidy()
+
+hypothetical <- data.frame(type = "F", longest_shell = 0.50, diameter = 0.10, height = 0.30, 
+                           whole_weight = 4, shucked_weight = 1, viscera_weight = 2, shell_weight = 1)
+predict(lm_fit, new_data = hypothetical)
+```
+<br>
+Based on those criteria, the predicted age is 23.103 years.
+  <br>
+<br>
+<br>
+<br>
+<br>  
+ Question 7:
+```{r}
+# assess model's performance 
+
+# PART 2
+# performance of model 
+abalone_train_res <- predict(lm_fit, new_data = abalone_train %>% select(-age))
+abalone_train_res %>% 
+head()
+
+# versus actual.. create tibble of both
+abalone_train_res <- bind_cols(abalone_train_res, abalone_train %>% select(age)) 
+abalone_train_res %>% 
+  head()
+
+# PART 1
+# metric set
+rmse(abalone_train_res, truth = age, estimate = .pred)
+abalone_metrics <- metric_set(rmse, rsq, mae)
+abalone_metrics
+
+# PART 3
+# apply metric set to tibble
+abalone_metrics(abalone_train_res, truth = age, estimate= .pred )
+
+```
+R^2 = 0.05570949 which means just over half of this model represents the data.  
+ About 56% of the variability is accounted for, which is not much better than a coin flip so this model clearly is not great.
+<br>
+<br>
+<br>
+
+
+
+
+
